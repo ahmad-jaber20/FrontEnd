@@ -33,7 +33,7 @@ jobs:
         run: npm ci
 
       - name: Test (optional)
-        run: npm test --if-present
+        run: npm test --if-present -- --watchAll=false --passWithNoTests
 
   docker:
     name: Build & Push Frontend Image (GHCR)
