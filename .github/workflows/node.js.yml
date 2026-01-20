@@ -1,4 +1,4 @@
-name: Test Frontend CI & Docker
+name: CI FrontEnd Deploy
 
 on:
   push:
@@ -22,10 +22,16 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
+          cache: npm
 
+      - name: Install
+        run: npm ci
+
+      - name: Test (optional)
+        run: npm test --if-present
 
   docker:
-    name: Build & Push Docker Image
+    name: Build & Push Frontend Image (Docker Hub)
     runs-on: ubuntu-latest
     needs: build
     if: github.ref == 'refs/heads/master' && github.event_name == 'push'
@@ -35,7 +41,7 @@ jobs:
 
       - name: Set tag
         id: vars
-        run: echo "SHA_TAG=sha-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+        run: echo "SHA_TAG=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
       - name: Login to Docker Hub
         uses: docker/login-action@v3
@@ -51,8 +57,28 @@ jobs:
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/my-frontend:latest
             ${{ secrets.DOCKERHUB_USERNAME }}/my-frontend:${{ steps.vars.outputs.SHA_TAG }}
-      - name: Compose Down And Remove old Images
-        run: docker compose -f ../docker-compose.yaml down --rmi all
-      - name: Run Docker Compose
-        run: docker compose -f "/home/ahmad-jaber/server/docker-compose.yaml" up -d --no-deps frontend
-        
+
+  deploy:
+    name: Deploy Frontend to server via SSH
+    runs-on: ubuntu-latest
+    needs: docker
+    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+
+    steps:
+      - name: SSH and deploy frontend
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd /root/AhmadJaber
+
+            # Pull latest frontend image (referenced inside docker-compose.yaml)
+            docker compose pull frontend
+
+            # Recreate ONLY frontend container
+            docker compose up -d --no-deps --force-recreate frontend
+
+            # Optional cleanup
+            docker image prune -f
