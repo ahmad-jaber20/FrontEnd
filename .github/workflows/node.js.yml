@@ -22,8 +22,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Use Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
@@ -46,8 +44,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Set image tag
         id: vars
@@ -78,33 +74,23 @@ jobs:
     steps:
       - name: SSH and deploy frontend
         uses: appleboy/ssh-action@v1.0.3
+        env:
+          GHCR_USER: ${{ github.repository_owner }}
+          GHCR_PAT: ${{ secrets.GHCR_PAT }}
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           passphrase: ${{ secrets.SSH_PASSPHRASE }}
+          port: ${{ secrets.SERVER_PORT }}
+          envs: GHCR_USER,GHCR_PAT
           script: |
             set -e
 
-            APP_DIR="/root/AhmadJaber"
-            REPO_URL="https://github.com/ahmadjaberoptimum/frontendTest.git"
+            echo "$GHCR_PAT" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
 
-            if [ ! -d "$APP_DIR/.git" ]; then
-              rm -rf "$APP_DIR"
-              git clone "$REPO_URL" "$APP_DIR"
-            fi
-
-            cd "$APP_DIR"
-            git fetch origin --prune
-
-            DEFAULT_BRANCH="$(git remote show origin | sed -n 's/.*HEAD branch: //p')"
-            echo "Default branch is: $DEFAULT_BRANCH"
-
-            git reset --hard "origin/$DEFAULT_BRANCH"
-
-            echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u "${{ github.repository_owner }}" --password-stdin
-
-            docker compose pull frontend
-            docker compose up -d --no-deps --force-recreate frontend
+            cd /root/AhmadJaber
+            docker compose -f docker-compose.yaml pull frontend
+            docker compose -f docker-compose.yaml up -d --no-deps --force-recreate frontend
 
             docker image prune -f
