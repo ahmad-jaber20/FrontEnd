@@ -2,9 +2,13 @@ name: CI FrontEnd Deploy
 
 on:
   push:
-    branches: ["master"]
+    branches: ["main"]
   pull_request:
-    branches: ["master"]
+    branches: ["main"]
+
+permissions:
+  contents: read
+  packages: write
 
 jobs:
   build:
@@ -16,7 +20,8 @@ jobs:
         node-version: [20.x]
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Use Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
@@ -24,30 +29,34 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: npm
 
-      - name: Install
+      - name: Install dependencies
         run: npm ci
 
       - name: Test (optional)
         run: npm test --if-present
 
   docker:
-    name: Build & Push Frontend Image (Docker Hub)
+    name: Build & Push Frontend Image (GHCR)
     runs-on: ubuntu-latest
     needs: build
-    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Set tag
+      - name: Set image tag
         id: vars
         run: echo "SHA_TAG=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
-      - name: Login to Docker Hub
+      - name: Login to GHCR
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build & Push Frontend image
         uses: docker/build-push-action@v6
@@ -55,14 +64,14 @@ jobs:
           context: .
           push: true
           tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/my-frontend:latest
-            ${{ secrets.DOCKERHUB_USERNAME }}/my-frontend:${{ steps.vars.outputs.SHA_TAG }}
+            ghcr.io/${{ github.repository_owner }}/my-frontend:latest
+            ghcr.io/${{ github.repository_owner }}/my-frontend:${{ steps.vars.outputs.SHA_TAG }}
 
   deploy:
-    name: Deploy Frontend to server via SSH
+    name: Deploy Frontend to Server via SSH
     runs-on: ubuntu-latest
     needs: docker
-    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
 
     steps:
       - name: SSH and deploy frontend
@@ -72,13 +81,25 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            cd /root/AhmadJaber
+            set -e
 
-            # Pull latest frontend image (referenced inside docker-compose.yaml)
+            APP_DIR="/root/AhmadJaber"
+            REPO_URL="https://github.com/ahmadjaberoptimum/frontendTest.git"
+
+            if [ ! -d "$APP_DIR/.git" ]; then
+              rm -rf "$APP_DIR"
+              git clone "$REPO_URL" "$APP_DIR"
+            else
+              cd "$APP_DIR"
+              git fetch origin
+              git reset --hard origin/main
+            fi
+
+            cd "$APP_DIR"
+
+            echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u "${{ github.repository_owner }}" --password-stdin
+
             docker compose pull frontend
-
-            # Recreate ONLY frontend container
             docker compose up -d --no-deps --force-recreate frontend
 
-            # Optional cleanup
             docker image prune -f
