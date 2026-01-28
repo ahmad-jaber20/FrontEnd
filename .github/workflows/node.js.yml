@@ -36,7 +36,6 @@ jobs:
       - name: Build & Push Frontend image (latest only)
         uses: docker/build-push-action@v6
         with:
-          # ✅ إذا Dockerfile الفرونت داخل مجلد frontend غيّرها لـ ./frontend
           context: .
           push: true
           tags: |
