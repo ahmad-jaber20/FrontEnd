@@ -1,4 +1,4 @@
-name: CI FrontEnd Deploy
+name: CI FrontEnd Deploy (Rollout Restart)
 
 on:
   push:
@@ -18,12 +18,12 @@ env:
 
 jobs:
   docker:
-    name: Build & Push Frontend Image (GHCR)
+    name: Build & Push Docker Image to GHCR
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
 
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Login to GHCR
@@ -43,43 +43,31 @@ jobs:
             ${{ env.IMAGE }}:latest
 
   deploy:
-    name: Deploy Frontend to K3s (namespace: ahmad)
-    runs-on: self-hosted
+    name: Rollout Restart Frontend
+    runs-on: ubuntu-latest
     needs: docker
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v1.30.0
 
-      - name: Verify cluster access
+      - name: Write kubeconfig from secret
+        shell: bash
         run: |
-          set -e
-          kubectl version --client
-          kubectl cluster-info
-          kubectl get nodes -o wide
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBECONFIG_B64 }}" | base64 -d > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+          kubectl -n $NAMESPACE get deploy
 
-      - name: Ensure namespace exists
+      - name: Rollout restart frontend
+        shell: bash
         run: |
-          set -e
-          kubectl get ns $NAMESPACE >/dev/null 2>&1 || kubectl create ns $NAMESPACE
-
-      - name: Apply manifests
-        run: |
-          set -e
-          # If you keep namespace inside YAML, this is enough:
-          kubectl apply -f ./k8s/namespace.yaml || true
-          kubectl apply -f ./k8s/frontend.yaml
-
-      - name: Update image & rollout
-        run: |
-          set -e
-          kubectl -n $NAMESPACE set image deploy/$DEPLOYMENT $CONTAINER=${{ env.IMAGE }}:${{ github.sha }}
+          kubectl -n $NAMESPACE rollout restart deploy/$DEPLOYMENT
           kubectl -n $NAMESPACE rollout status deploy/$DEPLOYMENT --timeout=180s
 
-      - name: Status
+      - name: Show pods
         run: |
-          set -e
-          kubectl -n $NAMESPACE get deploy -o wide
           kubectl -n $NAMESPACE get pods -o wide
-          kubectl -n $NAMESPACE get svc -o wide
