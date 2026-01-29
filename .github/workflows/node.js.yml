@@ -10,6 +10,12 @@ permissions:
   contents: read
   packages: write
 
+env:
+  NAMESPACE: ahmad
+  DEPLOYMENT: frontend
+  CONTAINER: frontend
+  IMAGE: ghcr.io/${{ github.repository_owner }}/my-frontend
+
 jobs:
   docker:
     name: Build & Push Frontend Image (GHCR)
@@ -27,16 +33,17 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build & Push Frontend image (latest only)
+      - name: Build & Push Frontend image
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/my-frontend:latest
+            ${{ env.IMAGE }}:${{ github.sha }}
+            ${{ env.IMAGE }}:latest
 
   deploy:
-    name: Deploy Frontend to local kind (pull latest, no port-forward)
+    name: Deploy Frontend to K3s (namespace: ahmad)
     runs-on: self-hosted
     needs: docker
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
@@ -45,45 +52,34 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Show versions
+      - name: Verify cluster access
         run: |
           set -e
           kubectl version --client
-          kind --version || true
-          docker --version
-
-      - name: Ensure kube context works
-        run: |
-          set -e
           kubectl cluster-info
           kubectl get nodes -o wide
 
-      - name: Apply frontend manifests
+      - name: Ensure namespace exists
         run: |
           set -e
+          kubectl get ns $NAMESPACE >/dev/null 2>&1 || kubectl create ns $NAMESPACE
 
-          if [ -d "./k8s" ]; then
-            K8S_DIR="./k8s"
-          elif [ -d "/home/ahmad-jaber/k8s" ]; then
-            K8S_DIR="/home/ahmad-jaber/k8s"
-          else
-            echo "ERROR: k8s manifests not found. Put them in ./k8s or ensure /home/ahmad-jaber/k8s exists."
-            exit 1
-          fi
-
-          echo "Using manifests at: $K8S_DIR"
-          ls -la "$K8S_DIR"
-
-          kubectl apply -f "$K8S_DIR/namespace.yaml"
-          kubectl apply -f "$K8S_DIR/frontend.yaml"
-
-      - name: Force pull latest (restart deployment)
+      - name: Apply manifests
         run: |
           set -e
-          kubectl -n frontend rollout restart deploy/frontend
-          kubectl -n frontend rollout status deploy/frontend --timeout=180s
+          # If you keep namespace inside YAML, this is enough:
+          kubectl apply -f ./k8s/namespace.yaml || true
+          kubectl apply -f ./k8s/frontend.yaml
+
+      - name: Update image & rollout
+        run: |
+          set -e
+          kubectl -n $NAMESPACE set image deploy/$DEPLOYMENT $CONTAINER=${{ env.IMAGE }}:${{ github.sha }}
+          kubectl -n $NAMESPACE rollout status deploy/$DEPLOYMENT --timeout=180s
 
       - name: Status
         run: |
-          kubectl -n frontend get pods
-          kubectl -n frontend get svc
+          set -e
+          kubectl -n $NAMESPACE get deploy -o wide
+          kubectl -n $NAMESPACE get pods -o wide
+          kubectl -n $NAMESPACE get svc -o wide
