@@ -61,7 +61,7 @@ jobs:
         # Define necessary deployment variables based on your existing setup
         env:
           FULL_SHA: ${{ github.sha }}
-          NAMESPACE: frontend
+          NAMESPACE: ahmad
           DEPLOYMENT_NAME: frontend
           CONTAINER_NAME: frontend
           IMAGE_REPO: ghcr.io/{{github.repository_owner}}/my-frontend
