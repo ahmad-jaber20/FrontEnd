@@ -1,8 +1,6 @@
 on:
   push:
-    tags:
-#      - "test902113-#"
-      - main
+    branches: ["main"]
 
 jobs:
   build:
