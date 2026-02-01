@@ -45,7 +45,7 @@ jobs:
             GITHUB_TOKEN=${{ secrets.USR_TOKEN }}
           push: true
           # --- FIX: Use the calculated SHORT_SHA here ---
-          tags: ghcr.io/{{github.repository_owner}}/my-frontend:${{ env.SHORT_SHA }}
+          tags: ghcr.io/${{ github.repository_owner }}/my-frontend:fbb4b3d:${{ env.SHORT_SHA }}
           # ----------------------------------------------
 
       # --- KUBERNETES AUTHENTICATION: This step provides kubectl access to the cluster ---
