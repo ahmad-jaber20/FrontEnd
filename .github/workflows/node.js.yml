@@ -64,7 +64,7 @@ jobs:
           NAMESPACE: ahmad
           DEPLOYMENT_NAME: frontend
           CONTAINER_NAME: frontend
-          IMAGE_REPO: ghcr.io/{{ github.repository_owner }}/my-frontend
+          IMAGE_REPO: ghcr.io/${{ github.repository_owner }}/my-frontend
         run: |
           # The SHORT_SHA is already available
           SHORT_SHA=${FULL_SHA:0:7}
@@ -73,16 +73,6 @@ jobs:
           echo "Triggering deployment update in namespace ${NAMESPACE}."
           echo "New image tag: ${NEW_IMAGE_TAG}"
           
-          # 3a. OPTIONAL: Apply manifests from the other repo's path (if this CI has access to the manifests repo)
-          # If you cannot access the other repo, you must assume the base deployment already exists.
-          # If the base deployment is already running, SKIP this step.
-          # If you use Kustomize for overlays (as suggested by the -k), you might run this:
-          # kubectl apply -k /path/to/manifests/stg 
-          
-          # 3b. CRITICAL STEP: Set the image. This command talks directly to the K8s API server.
-          # It updates the image field in the running 'olive-assets' deployment from the old 
-          # static tag (:stg-k8s) to the new dynamic tag (:a411ced), 
-          # which immediately forces a pull and rolling update.
           kubectl set image deployment/${DEPLOYMENT_NAME} \
             ${CONTAINER_NAME}=${NEW_IMAGE_TAG} \
             --namespace=${NAMESPACE}
